@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NL Security Camera</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0b0d;
+    --surface: #111318;
+    --surface2: #181b21;
+    --border: rgba(255,255,255,0.07);
+    --border-bright: rgba(255,255,255,0.15);
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --accent: #00e5a0;
+    --accent-dim: rgba(0,229,160,0.12);
+    --accent-border: rgba(0,229,160,0.3);
+    --alert: #ff4d6d;
+    --alert-dim: rgba(255,77,109,0.1);
+    --alert-border: rgba(255,77,109,0.3);
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: 48px 1fr;
+    grid-template-columns: 1fr 340px;
+  }
+
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    gap: 16px;
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+  }
+
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .status-dot.live { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+  .status-dot.alert { background: var(--alert); box-shadow: 0 0 8px var(--alert); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .status-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .condition-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: none;
+  }
+
+  main {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow: hidden;
+  }
+
+  .feed-container {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #feed {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .feed-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+  }
+
+  .feed-placeholder svg { opacity: 0.3; }
+
+  .feed-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .feed-overlay.triggered {
+    border-color: var(--alert);
+    box-shadow: inset 0 0 40px rgba(255,77,109,0.15);
+  }
+
+  .alert-banner {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    background: var(--alert);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 14px;
+    border-radius: 4px;
+    display: none;
+    letter-spacing: 0.06em;
+    animation: slideDown 0.2s ease;
+  }
+  @keyframes slideDown {
+    from { transform: translateY(-8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .feed-meta {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .meta-chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid var(--border-bright);
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  .query-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  .query-input {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .query-input::placeholder { color: var(--muted); }
+  .query-input:focus { border-color: var(--accent-border); }
+
+  .query-btn {
+    background: var(--accent);
+    color: #0a0b0d;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 18px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .query-btn:hover { opacity: 0.85; }
+  .query-btn:active { transform: scale(0.97); }
+  .query-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .sidebar {
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .condition-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    min-height: 60px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .condition-card.active {
+    border-color: var(--accent-border);
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+  .condition-card .key { color: var(--muted); }
+  .condition-card .val { color: var(--accent); }
+
+  .examples {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .example-pill {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    text-align: left;
+  }
+  .example-pill:hover {
+    border-color: var(--border-bright);
+    color: var(--text);
+  }
+
+  .alert-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .alert-log::-webkit-scrollbar { width: 4px; }
+  .alert-log::-webkit-scrollbar-track { background: transparent; }
+  .alert-log::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+  .alert-item {
+    background: var(--surface2);
+    border: 1px solid var(--alert-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    animation: fadeIn 0.25s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .alert-time {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--alert);
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+  }
+
+  .alert-reason {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .alert-thumb {
+    width: 100%;
+    margin-top: 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    max-height: 80px;
+    display: block;
+  }
+
+  .no-alerts {
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+    margin-top: 24px;
+    font-family: var(--mono);
+  }
+
+  .connecting-msg {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">NLCAM</span>
+  <div class="status-dot" id="statusDot"></div>
+  <span class="status-label" id="statusLabel">DISCONNECTED</span>
+  <div class="header-right">
+    <span class="condition-badge" id="conditionBadge"></span>
+  </div>
+</header>
+
+<main>
+  <div class="feed-container" id="feedContainer">
+    <div class="feed-placeholder" id="feedPlaceholder">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+        <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+      </svg>
+      <span style="font-family:var(--mono);font-size:12px;">awaiting stream</span>
+    </div>
+    <img id="feed" style="display:none;" alt="Camera feed"/>
+    <div class="feed-overlay" id="feedOverlay"></div>
+    <div class="alert-banner" id="alertBanner"></div>
+    <div class="feed-meta">
+      <span class="meta-chip" id="fpsChip">-- fps</span>
+      <span class="meta-chip" id="timeChip">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="query-row">
+    <input class="query-input" id="queryInput" type="text"
+      placeholder='e.g. "alert me if a person enters the frame" or "notify when a bag is left unattended"'/>
+    <button class="query-btn" id="queryBtn" onclick="setCondition()">SET ALERT</button>
+  </div>
+</main>
+
+<div class="sidebar">
+  <div class="sidebar-section">
+    <p class="section-label">Active condition</p>
+    <div class="condition-card" id="conditionDisplay">no condition set</div>
+  </div>
+
+  <div class="sidebar-section">
+    <p class="section-label">Example queries</p>
+    <div class="examples">
+      <button class="example-pill" onclick="useExample(this)">Alert if a person enters the frame</button>
+      <button class="example-pill" onclick="useExample(this)">Notify when a bag is left unattended</button>
+      <button class="example-pill" onclick="useExample(this)">Trigger if more than 2 people are present</button>
+      <button class="example-pill" onclick="useExample(this)">Alert when someone is near the door</button>
+    </div>
+  </div>
+
+  <p class="section-label" style="padding: 16px 16px 0;">Alert log</p>
+  <div class="alert-log" id="alertLog">
+    <p class="no-alerts">no alerts yet</p>
+  </div>
+</div>
+
+<script>
+  const WS_URL = "ws://localhost:8000/ws/stream";
+  const API_URL = "http://localhost:8000";
+
+  let ws = null;
+  let frameCount = 0;
+  let lastFpsTime = Date.now();
+  let alertClearTimer = null;
+
+  const statusDot = document.getElementById("statusDot");
+  const statusLabel = document.getElementById("statusLabel");
+  const feedEl = document.getElementById("feed");
+  const feedPlaceholder = document.getElementById("feedPlaceholder");
+  const feedOverlay = document.getElementById("feedOverlay");
+  const alertBanner = document.getElementById("alertBanner");
+  const conditionDisplay = document.getElementById("conditionDisplay");
+  const conditionBadge = document.getElementById("conditionBadge");
+  const alertLog = document.getElementById("alertLog");
+  const fpsChip = document.getElementById("fpsChip");
+  const timeChip = document.getElementById("timeChip");
+
+  function connect() {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      statusDot.className = "status-dot live";
+      statusLabel.textContent = "LIVE";
+      feedPlaceholder.style.display = "none";
+      feedEl.style.display = "block";
+    };
+
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+
+      feedEl.src = "data:image/jpeg;base64," + data.frame;
+
+      frameCount++;
+      const now = Date.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsChip.textContent = frameCount + " fps";
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+      timeChip.textContent = new Date().toLocaleTimeString();
+
+      if (data.alert) {
+        triggerAlert(data.alert);
+      }
+    };
+
+    ws.onclose = () => {
+      statusDot.className = "status-dot";
+      statusLabel.textContent = "DISCONNECTED";
+      setTimeout(connect, 3000);
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  function triggerAlert(alert) {
+    statusDot.className = "status-dot alert";
+    feedOverlay.className = "feed-overlay triggered";
+    alertBanner.style.display = "block";
+    alertBanner.textContent = "ALERT — " + alert.reason;
+
+    clearTimeout(alertClearTimer);
+    alertClearTimer = setTimeout(() => {
+      feedOverlay.className = "feed-overlay";
+      alertBanner.style.display = "none";
+      statusDot.className = "status-dot live";
+    }, 4000);
+
+    addAlertToLog(alert);
+  }
+
+  function addAlertToLog(alert) {
+    const noAlerts = alertLog.querySelector(".no-alerts");
+    if (noAlerts) noAlerts.remove();
+
+    const item = document.createElement("div");
+    item.className = "alert-item";
+    item.innerHTML = `
+      <div class="alert-time">${alert.timestamp}</div>
+      <div class="alert-reason">${alert.reason}</div>
+      <img class="alert-thumb" src="data:image/jpeg;base64,${alert.frame}" alt="alert frame"/>
+    `;
+    alertLog.insertBefore(item, alertLog.firstChild);
+
+    if (alertLog.children.length > 20) {
+      alertLog.removeChild(alertLog.lastChild);
+    }
+  }
+
+  async function setCondition() {
+    const query = document.getElementById("queryInput").value.trim();
+    if (!query) return;
+
+    const btn = document.getElementById("queryBtn");
+    btn.disabled = true;
+    btn.textContent = "COMPILING...";
+
+    try {
+      const res = await fetch(API_URL + "/compile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+      const data = await res.json();
+      const cond = data.condition;
+
+      conditionDisplay.className = "condition-card active";
+      conditionDisplay.innerHTML = Object.entries(cond)
+        .map(([k, v]) => `<span class="key">${k}: </span><span class="val">"${v}"</span>`)
+        .join("<br/>");
+
+      conditionBadge.style.display = "block";
+      conditionBadge.textContent = query;
+
+    } catch (err) {
+      conditionDisplay.className = "condition-card";
+      conditionDisplay.textContent = "error — is the backend running?";
+    }
+
+    btn.disabled = false;
+    btn.textContent = "SET ALERT";
+  }
+
+  function useExample(el) {
+    document.getElementById("queryInput").value = el.textContent;
+  }
+
+  document.getElementById("queryInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") setCondition();
+  });
+
+  connect();
+</script>
+</body>
+</html>
