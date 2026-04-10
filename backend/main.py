@@ -27,7 +27,7 @@ class QueryRequest(BaseModel):
 @app.post("/compile")
 async def compile_query(req: QueryRequest):
     global active_condition
-    condition = compiler.compile(req.query)
+    condition = await asyncio.to_thread(compiler.compile, req.query)
     active_condition = condition
     return {"condition": condition}
 
@@ -49,7 +49,7 @@ async def stream(websocket: WebSocket):
 
             # Only run VLM check if a condition is active (throttled to ~1fps)
             if active_condition:
-                result = vlm.check(frame_b64, active_condition)
+                result = await asyncio.to_thread(vlm.check, frame_b64, active_condition)
                 if result.triggered:
                     alert = {
                         "timestamp": time.strftime("%H:%M:%S"),
