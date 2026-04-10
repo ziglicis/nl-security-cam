@@ -507,11 +507,21 @@
 
     const item = document.createElement("div");
     item.className = "alert-item";
-    item.innerHTML = `
-      <div class="alert-time">${alert.timestamp}</div>
-      <div class="alert-reason">${alert.reason}</div>
-      <img class="alert-thumb" src="data:image/jpeg;base64,${alert.frame}" alt="alert frame"/>
-    `;
+
+    const timeEl = document.createElement("div");
+    timeEl.className = "alert-time";
+    timeEl.textContent = alert.timestamp;
+
+    const reasonEl = document.createElement("div");
+    reasonEl.className = "alert-reason";
+    reasonEl.textContent = alert.reason;
+
+    const thumbEl = document.createElement("img");
+    thumbEl.className = "alert-thumb";
+    thumbEl.alt = "alert frame";
+    thumbEl.src = "data:image/jpeg;base64," + alert.frame;
+
+    item.append(timeEl, reasonEl, thumbEl);
     alertLog.insertBefore(item, alertLog.firstChild);
 
     if (alertLog.children.length > 20) {
@@ -540,9 +550,17 @@
       const cond = data.condition;
 
       conditionDisplay.className = "condition-card active";
-      conditionDisplay.innerHTML = Object.entries(cond)
-        .map(([k, v]) => `<span class="key">${k}: </span><span class="val">"${v}"</span>`)
-        .join("<br/>");
+      conditionDisplay.textContent = "";
+      Object.entries(cond).forEach(([k, v], i) => {
+        if (i > 0) conditionDisplay.appendChild(document.createElement("br"));
+        const keySpan = document.createElement("span");
+        keySpan.className = "key";
+        keySpan.textContent = k + ": ";
+        const valSpan = document.createElement("span");
+        valSpan.className = "val";
+        valSpan.textContent = '"' + v + '"';
+        conditionDisplay.append(keySpan, valSpan);
+      });
 
       conditionBadge.style.display = "block";
       conditionBadge.textContent = query;
