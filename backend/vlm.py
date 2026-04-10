@@ -1,6 +1,9 @@
+import logging
 import ollama
 import base64
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class VLMResult:
@@ -21,14 +24,18 @@ REASON: one sentence explanation
 
 Does the condition apply to this image?"""
 
-        response = ollama.chat(
-            model=self.model,
-            messages=[{
-                "role": "user",
-                "content": prompt,
-                "images": [frame_b64]
-            }]
-        )
+        try:
+            response = ollama.chat(
+                model=self.model,
+                messages=[{
+                    "role": "user",
+                    "content": prompt,
+                    "images": [frame_b64]
+                }]
+            )
+        except Exception as e:
+            logger.error("VLM inference failed: %s", e)
+            return VLMResult(triggered=False, explanation="")
 
         text = response["message"]["content"].strip()
         triggered = "triggered: yes" in text.lower()
