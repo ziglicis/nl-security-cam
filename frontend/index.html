@@ -411,8 +411,19 @@
 </div>
 
 <script>
-  const WS_URL = "ws://localhost:8000/ws/stream";
   const API_URL = "http://localhost:8000";
+
+  function getToken() {
+    let token = sessionStorage.getItem("nlcam_token");
+    if (!token) {
+      token = prompt("Enter API token:");
+      if (token) sessionStorage.setItem("nlcam_token", token);
+    }
+    return token || "";
+  }
+
+  const API_TOKEN = getToken();
+  const WS_URL = `ws://localhost:8000/ws/stream?token=${encodeURIComponent(API_TOKEN)}`;
 
   let ws = null;
   let frameCount = 0;
@@ -460,8 +471,13 @@
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (e) => {
       statusDot.className = "status-dot";
+      if (e.code === 1008) {
+        statusLabel.textContent = "AUTH FAILED";
+        sessionStorage.removeItem("nlcam_token");
+        return;
+      }
       statusLabel.textContent = "DISCONNECTED";
       setTimeout(connect, 3000);
     };
@@ -514,7 +530,10 @@
     try {
       const res = await fetch(API_URL + "/compile", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + API_TOKEN
+        },
         body: JSON.stringify({ query })
       });
       const data = await res.json();

@@ -1,14 +1,28 @@
 import asyncio
 import json
+import os
+import secrets
 import time
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from camera import Camera
 from vlm import VLMChecker
 from compiler import QueryCompiler
+
+API_TOKEN = os.environ.get("NLCAM_API_TOKEN", "")
+if not API_TOKEN:
+    API_TOKEN = secrets.token_urlsafe(32)
+    print(f"[NLCAM] No NLCAM_API_TOKEN set. Generated token: {API_TOKEN}")
+
+security = HTTPBearer()
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not secrets.compare_digest(credentials.credentials, API_TOKEN):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -24,19 +38,22 @@ alert_log: list = []
 class QueryRequest(BaseModel):
     query: str
 
-@app.post("/compile")
+@app.post("/compile", dependencies=[Depends(verify_token)])
 async def compile_query(req: QueryRequest):
     global active_condition
     condition = await asyncio.to_thread(compiler.compile, req.query)
     active_condition = condition
     return {"condition": condition}
 
-@app.get("/alerts")
+@app.get("/alerts", dependencies=[Depends(verify_token)])
 def get_alerts():
     return {"alerts": alert_log[-50:]}  # Last 50 alerts
 
 @app.websocket("/ws/stream")
-async def stream(websocket: WebSocket):
+async def stream(websocket: WebSocket, token: str = Query(...)):
+    if not secrets.compare_digest(token, API_TOKEN):
+        await websocket.close(code=1008, reason="Invalid token")
+        return
     await websocket.accept()
     try:
         while True:
