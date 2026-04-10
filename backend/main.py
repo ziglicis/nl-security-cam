@@ -5,7 +5,6 @@ import secrets
 import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -75,6 +74,8 @@ async def stream(websocket: WebSocket, token: str = Query(...)):
                         "frame": frame_b64
                     }
                     alert_log.append(alert)
+                    if len(alert_log) > 50:
+                        alert_log[:] = alert_log[-50:]
                     payload["alert"] = alert
 
             await websocket.send_text(json.dumps({
