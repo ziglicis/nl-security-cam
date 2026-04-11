@@ -34,6 +34,7 @@ compiler = QueryCompiler(model=os.environ.get("NLCAM_COMPILER_MODEL", "mistral")
 # Shared state
 active_condition: dict = {}
 alert_log: list = []
+connected_clients: set[WebSocket] = set()
 
 class QueryRequest(BaseModel):
     query: str
@@ -49,42 +50,59 @@ async def compile_query(req: QueryRequest):
 def get_alerts():
     return {"alerts": alert_log[-50:]}  # Last 50 alerts
 
+async def broadcast(message: str):
+    stale = []
+    for ws in connected_clients:
+        try:
+            await ws.send_text(message)
+        except Exception:
+            stale.append(ws)
+    for ws in stale:
+        connected_clients.discard(ws)
+
+async def capture_loop():
+    while True:
+        frame_b64 = camera.get_frame_b64()
+        if frame_b64 is None:
+            await asyncio.sleep(0.1)
+            continue
+
+        alert = None
+
+        if active_condition:
+            result = await asyncio.to_thread(vlm.check, frame_b64, active_condition)
+            if result.triggered:
+                alert = {
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "condition": active_condition,
+                    "reason": result.explanation,
+                    "frame": frame_b64
+                }
+                alert_log.append(alert)
+                if len(alert_log) > 50:
+                    alert_log[:] = alert_log[-50:]
+
+        if connected_clients:
+            msg = json.dumps({"frame": frame_b64, "alert": alert})
+            await broadcast(msg)
+
+        await asyncio.sleep(1.0)
+
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(capture_loop())
+
 @app.websocket("/ws/stream")
 async def stream(websocket: WebSocket, token: str = Query(...)):
     if not secrets.compare_digest(token, API_TOKEN):
         await websocket.close(code=1008, reason="Invalid token")
         return
     await websocket.accept()
+    connected_clients.add(websocket)
     try:
         while True:
-            frame_b64 = camera.get_frame_b64()
-            if frame_b64 is None:
-                await asyncio.sleep(0.1)
-                continue
-
-            payload = {"frame": frame_b64, "alert": None}
-
-            # Only run VLM check if a condition is active (throttled to ~1fps)
-            if active_condition:
-                result = await asyncio.to_thread(vlm.check, frame_b64, active_condition)
-                if result.triggered:
-                    alert = {
-                        "timestamp": time.strftime("%H:%M:%S"),
-                        "condition": active_condition,
-                        "reason": result.explanation,
-                        "frame": frame_b64
-                    }
-                    alert_log.append(alert)
-                    if len(alert_log) > 50:
-                        alert_log[:] = alert_log[-50:]
-                    payload["alert"] = alert
-
-            await websocket.send_text(json.dumps({
-                "frame": frame_b64,
-                "alert": payload["alert"]
-            }))
-
-            await asyncio.sleep(1.0)  # 1fps VLM cadence
-
+            await websocket.receive_text()
     except WebSocketDisconnect:
         pass
+    finally:
+        connected_clients.discard(websocket)
