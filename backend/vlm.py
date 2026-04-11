@@ -1,6 +1,6 @@
 import logging
+import re
 import ollama
-import base64
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -38,9 +38,7 @@ Does the condition apply to this image?"""
             return VLMResult(triggered=False, explanation="")
 
         text = response["message"]["content"].strip()
-        triggered = "triggered: yes" in text.lower()
-        reason = ""
-        for line in text.splitlines():
-            if line.lower().startswith("reason:"):
-                reason = line.split(":", 1)[1].strip()
+        triggered = bool(re.search(r"^TRIGGERED:\s*yes", text, re.IGNORECASE | re.MULTILINE))
+        reason_match = re.search(r"^REASON:\s*(.+)", text, re.IGNORECASE | re.MULTILINE)
+        reason = reason_match.group(1).strip() if reason_match else text
         return VLMResult(triggered=triggered, explanation=reason)
