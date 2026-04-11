@@ -32,10 +32,11 @@ python --version  # should be 3.10 or higher
 
 ### 2. Ollama
 
-Ollama runs the LLaVA model locally. Install from [ollama.com](https://ollama.com), then pull the model:
+Ollama runs the LLaVA and mistral models locally. Install from [ollama.com](https://ollama.com), then pull the model:
 
 ```bash
 ollama pull llava:7b
+ollama pull mistral
 ```
 
 > **GPU note:** LLaVA-7B needs ~6GB VRAM. If you only have CPU, inference will be slow (~10–20s per frame). See [Faster Alternatives](#faster-alternatives) below.
