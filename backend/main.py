@@ -29,7 +29,7 @@ app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["G
 
 camera = Camera(source=0)
 vlm = VLMChecker(model="llava:7b")
-compiler = QueryCompiler(model="llava:7b")
+compiler = QueryCompiler(model=os.environ.get("NLCAM_COMPILER_MODEL", "mistral"))
 
 # Shared state
 active_condition: dict = {}

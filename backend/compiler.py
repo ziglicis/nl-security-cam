@@ -6,7 +6,7 @@ import re
 logger = logging.getLogger(__name__)
 
 class QueryCompiler:
-    def __init__(self, model: str = "llava:7b"):
+    def __init__(self, model: str = "mistral"):
         self.model = model
 
     def compile(self, natural_language_query: str) -> dict:
