@@ -24,7 +24,8 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+CORS_ORIGINS = os.environ.get("NLCAM_CORS_ORIGINS", "http://localhost:5500").split(",")
+app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 
 camera = Camera(source=0)
 vlm = VLMChecker(model="llava:7b")
