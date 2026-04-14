@@ -92,6 +92,10 @@ async def capture_loop():
 async def startup():
     asyncio.create_task(capture_loop())
 
+@app.on_event("shutdown")
+async def shutdown():
+    camera.release()
+
 @app.websocket("/ws/stream")
 async def stream(websocket: WebSocket, token: str = Query(...)):
     if not secrets.compare_digest(token, API_TOKEN):
