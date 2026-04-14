@@ -71,14 +71,15 @@ async def broadcast(message: str):
 
 async def capture_loop():
     while True:
-        frame_b64 = camera.get_frame_b64()
+        frame_b64, raw_frame = camera.get_frame()
         if frame_b64 is None:
             await asyncio.sleep(0.1)
             continue
 
         alert = None
+        motion = camera.has_motion(raw_frame)
 
-        if active_condition:
+        if active_condition and motion:
             result = await asyncio.to_thread(vlm.check, frame_b64, active_condition)
             if result.triggered:
                 logger.info("Alert triggered: %s", result.explanation)
