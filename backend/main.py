@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import secrets
 import time
@@ -12,10 +13,17 @@ from camera import Camera
 from vlm import VLMChecker
 from compiler import QueryCompiler
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("nlcam")
+
 API_TOKEN = os.environ.get("NLCAM_API_TOKEN", "")
 if not API_TOKEN:
     API_TOKEN = secrets.token_urlsafe(32)
-    print(f"[NLCAM] No NLCAM_API_TOKEN set. Generated token: {API_TOKEN}")
+    logger.warning("No NLCAM_API_TOKEN set. Generated token: %s", API_TOKEN)
 
 security = HTTPBearer()
 
@@ -44,6 +52,7 @@ async def compile_query(req: QueryRequest):
     global active_condition
     condition = await asyncio.to_thread(compiler.compile, req.query)
     active_condition = condition
+    logger.info("Condition set: %s", condition)
     return {"condition": condition}
 
 @app.get("/alerts", dependencies=[Depends(verify_token)])
@@ -72,6 +81,7 @@ async def capture_loop():
         if active_condition:
             result = await asyncio.to_thread(vlm.check, frame_b64, active_condition)
             if result.triggered:
+                logger.info("Alert triggered: %s", result.explanation)
                 alert = {
                     "timestamp": time.strftime("%H:%M:%S"),
                     "condition": active_condition,
@@ -90,10 +100,12 @@ async def capture_loop():
 
 @app.on_event("startup")
 async def startup():
+    logger.info("Starting capture loop")
     asyncio.create_task(capture_loop())
 
 @app.on_event("shutdown")
 async def shutdown():
+    logger.info("Shutting down, releasing camera")
     camera.release()
 
 @app.websocket("/ws/stream")
@@ -103,6 +115,7 @@ async def stream(websocket: WebSocket, token: str = Query(...)):
         return
     await websocket.accept()
     connected_clients.add(websocket)
+    logger.info("Client connected (%d total)", len(connected_clients))
     try:
         while True:
             await websocket.receive_text()
@@ -110,3 +123,4 @@ async def stream(websocket: WebSocket, token: str = Query(...)):
         pass
     finally:
         connected_clients.discard(websocket)
+        logger.info("Client disconnected (%d remaining)", len(connected_clients))
