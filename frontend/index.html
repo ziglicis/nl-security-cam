@@ -247,24 +247,44 @@
     margin-bottom: 12px;
   }
 
+  .condition-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 40px;
+  }
+
   .condition-card {
-    background: var(--surface2);
-    border: 1px solid var(--border);
+    background: var(--accent-dim);
+    border: 1px solid var(--accent-border);
     border-radius: 6px;
-    padding: 12px;
+    padding: 10px 12px;
     font-family: var(--mono);
     font-size: 11px;
-    min-height: 60px;
-    color: var(--muted);
-    line-height: 1.7;
-  }
-  .condition-card.active {
-    border-color: var(--accent-border);
-    background: var(--accent-dim);
     color: var(--accent);
+    line-height: 1.5;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
   }
-  .condition-card .key { color: var(--muted); }
-  .condition-card .val { color: var(--accent); }
+  .condition-card .query-text { flex: 1; }
+  .condition-card .remove-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    line-height: 1;
+  }
+  .condition-card .remove-btn:hover { color: var(--alert); }
+
+  .no-conditions {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
 
   .examples {
     display: flex;
@@ -390,8 +410,10 @@
 
 <div class="sidebar">
   <div class="sidebar-section">
-    <p class="section-label">Active condition</p>
-    <div class="condition-card" id="conditionDisplay">no condition set</div>
+    <p class="section-label">Active conditions</p>
+    <div class="condition-list" id="conditionList">
+      <span class="no-conditions">no conditions set</span>
+    </div>
   </div>
 
   <div class="sidebar-section">
@@ -436,7 +458,7 @@
   const feedPlaceholder = document.getElementById("feedPlaceholder");
   const feedOverlay = document.getElementById("feedOverlay");
   const alertBanner = document.getElementById("alertBanner");
-  const conditionDisplay = document.getElementById("conditionDisplay");
+  const conditionList = document.getElementById("conditionList");
   const conditionBadge = document.getElementById("conditionBadge");
   const alertLog = document.getElementById("alertLog");
   const fpsChip = document.getElementById("fpsChip");
@@ -466,8 +488,8 @@
       }
       timeChip.textContent = new Date().toLocaleTimeString();
 
-      if (data.alert) {
-        triggerAlert(data.alert);
+      if (data.alerts) {
+        data.alerts.forEach(a => triggerAlert(a));
       }
     };
 
@@ -510,7 +532,7 @@
 
     const timeEl = document.createElement("div");
     timeEl.className = "alert-time";
-    timeEl.textContent = alert.timestamp;
+    timeEl.textContent = alert.timestamp + (alert.condition_query ? " — " + alert.condition_query : "");
 
     const reasonEl = document.createElement("div");
     reasonEl.className = "alert-reason";
@@ -527,6 +549,56 @@
     if (alertLog.children.length > 20) {
       alertLog.removeChild(alertLog.lastChild);
     }
+  }
+
+  function addConditionCard(cond) {
+    const noMsg = conditionList.querySelector(".no-conditions");
+    if (noMsg) noMsg.remove();
+
+    const card = document.createElement("div");
+    card.className = "condition-card";
+    card.dataset.id = cond._id;
+
+    const text = document.createElement("span");
+    text.className = "query-text";
+    text.textContent = cond._query || cond.description || JSON.stringify(cond);
+
+    const btn = document.createElement("button");
+    btn.className = "remove-btn";
+    btn.textContent = "\u00d7";
+    btn.onclick = () => removeCondition(cond._id);
+
+    card.append(text, btn);
+    conditionList.appendChild(card);
+    updateBadge();
+  }
+
+  function updateBadge() {
+    const count = conditionList.querySelectorAll(".condition-card").length;
+    if (count > 0) {
+      conditionBadge.style.display = "block";
+      conditionBadge.textContent = count + " condition" + (count > 1 ? "s" : "") + " active";
+    } else {
+      conditionBadge.style.display = "none";
+    }
+  }
+
+  async function removeCondition(id) {
+    try {
+      await fetch(API_URL + "/conditions/" + id, {
+        method: "DELETE",
+        headers: { "Authorization": "Bearer " + API_TOKEN }
+      });
+      const card = conditionList.querySelector(`[data-id="${id}"]`);
+      if (card) card.remove();
+      if (!conditionList.querySelector(".condition-card")) {
+        const msg = document.createElement("span");
+        msg.className = "no-conditions";
+        msg.textContent = "no conditions set";
+        conditionList.appendChild(msg);
+      }
+      updateBadge();
+    } catch (err) {}
   }
 
   async function setCondition() {
@@ -547,27 +619,13 @@
         body: JSON.stringify({ query })
       });
       const data = await res.json();
-      const cond = data.condition;
-
-      conditionDisplay.className = "condition-card active";
-      conditionDisplay.textContent = "";
-      Object.entries(cond).forEach(([k, v], i) => {
-        if (i > 0) conditionDisplay.appendChild(document.createElement("br"));
-        const keySpan = document.createElement("span");
-        keySpan.className = "key";
-        keySpan.textContent = k + ": ";
-        const valSpan = document.createElement("span");
-        valSpan.className = "val";
-        valSpan.textContent = '"' + v + '"';
-        conditionDisplay.append(keySpan, valSpan);
-      });
-
-      conditionBadge.style.display = "block";
-      conditionBadge.textContent = query;
-
+      addConditionCard(data.condition);
+      document.getElementById("queryInput").value = "";
     } catch (err) {
-      conditionDisplay.className = "condition-card";
-      conditionDisplay.textContent = "error — is the backend running?";
+      const errMsg = document.createElement("span");
+      errMsg.className = "no-conditions";
+      errMsg.textContent = "error — is the backend running?";
+      conditionList.appendChild(errMsg);
     }
 
     btn.disabled = false;

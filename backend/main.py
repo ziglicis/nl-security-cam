@@ -4,6 +4,7 @@ import logging
 import os
 import secrets
 import time
+import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -33,14 +34,14 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 
 app = FastAPI()
 CORS_ORIGINS = os.environ.get("NLCAM_CORS_ORIGINS", "http://localhost:5500").split(",")
-app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["GET", "POST", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 
 camera = Camera(source=0)
 vlm = VLMChecker(model="llava:7b")
 compiler = QueryCompiler(model=os.environ.get("NLCAM_COMPILER_MODEL", "mistral"))
 
 # Shared state
-active_condition: dict = {}
+active_conditions: list[dict] = []
 alert_log: list = []
 connected_clients: set[WebSocket] = set()
 
@@ -49,11 +50,25 @@ class QueryRequest(BaseModel):
 
 @app.post("/compile", dependencies=[Depends(verify_token)])
 async def compile_query(req: QueryRequest):
-    global active_condition
     condition = await asyncio.to_thread(compiler.compile, req.query)
-    active_condition = condition
-    logger.info("Condition set: %s", condition)
+    condition["_id"] = str(uuid.uuid4())[:8]
+    condition["_query"] = req.query
+    active_conditions.append(condition)
+    logger.info("Condition added [%s]: %s", condition["_id"], req.query)
     return {"condition": condition}
+
+@app.get("/conditions", dependencies=[Depends(verify_token)])
+def get_conditions():
+    return {"conditions": active_conditions}
+
+@app.delete("/conditions/{condition_id}", dependencies=[Depends(verify_token)])
+def delete_condition(condition_id: str):
+    for i, c in enumerate(active_conditions):
+        if c.get("_id") == condition_id:
+            active_conditions.pop(i)
+            logger.info("Condition removed [%s]", condition_id)
+            return {"removed": condition_id}
+    raise HTTPException(status_code=404, detail="Condition not found")
 
 @app.get("/alerts", dependencies=[Depends(verify_token)])
 def get_alerts():
@@ -76,25 +91,28 @@ async def capture_loop():
             await asyncio.sleep(0.1)
             continue
 
-        alert = None
+        alerts = []
         motion = camera.has_motion(raw_frame)
 
-        if active_condition and motion:
-            result = await asyncio.to_thread(vlm.check, frame_b64, active_condition)
-            if result.triggered:
-                logger.info("Alert triggered: %s", result.explanation)
-                alert = {
-                    "timestamp": time.strftime("%H:%M:%S"),
-                    "condition": active_condition,
-                    "reason": result.explanation,
-                    "frame": frame_b64
-                }
-                alert_log.append(alert)
-                if len(alert_log) > 50:
-                    alert_log[:] = alert_log[-50:]
+        if active_conditions and motion:
+            for condition in list(active_conditions):
+                result = await asyncio.to_thread(vlm.check, frame_b64, condition)
+                if result.triggered:
+                    logger.info("Alert triggered [%s]: %s", condition.get("_id"), result.explanation)
+                    alert = {
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "condition_id": condition.get("_id"),
+                        "condition_query": condition.get("_query", ""),
+                        "reason": result.explanation,
+                        "frame": frame_b64
+                    }
+                    alert_log.append(alert)
+                    alerts.append(alert)
+            if len(alert_log) > 50:
+                alert_log[:] = alert_log[-50:]
 
         if connected_clients:
-            msg = json.dumps({"frame": frame_b64, "alert": alert})
+            msg = json.dumps({"frame": frame_b64, "alerts": alerts if alerts else None})
             await broadcast(msg)
 
         await asyncio.sleep(1.0)
